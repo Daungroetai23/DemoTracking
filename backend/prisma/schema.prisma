@@ -1,0 +1,91 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+enum Role {
+  ADMIN
+  IT_SUPPORT
+  SALES
+}
+
+enum AssetStatus {
+  READY
+  BORROWED
+  MAINTENANCE
+}
+
+enum TransactionStatus {
+  ACTIVE
+  RETURNED
+  OVERDUE
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(ADMIN)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Asset {
+  id           Int           @id @default(autoincrement())
+  assetCode    String        @unique
+  name         String
+  category     String
+  status       AssetStatus   @default(READY)
+  serialNumber String
+  spec         String        @db.Text
+  location     String
+  dateAdded    DateTime      @default(now())
+  imageUrl     String?       @db.LongText
+  pdfUrl       String?       @db.LongText
+  images       AssetImage[]
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model AssetImage {
+  id        Int      @id @default(autoincrement())
+  assetId   Int
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  imageUrl  String   @db.LongText
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Transaction {
+  id             Int               @id @default(autoincrement())
+  assetId        Int
+  asset          Asset             @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  borrowerName   String
+  customerName   String            @default("")
+  salesTeam      String            @default("")
+  department     String            @default("")
+  organization   String            @default("")
+  borrowDate     DateTime
+  dueDate        DateTime
+  returnDate     DateTime?
+  locationFrom   String            @default("")
+  locationTo     String            @default("")
+  returnLocation String?
+  status         TransactionStatus @default(ACTIVE)
+  notes          String?           @db.Text
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
