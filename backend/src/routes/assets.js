@@ -12,6 +12,8 @@ function formatAssetUrls(asset, baseUrl) {
   
   const formatUrl = (url) => {
     if (!url) return url;
+    // base64 data URLs are already complete — return as-is
+    if (url.startsWith('data:')) return url;
     if (url.startsWith('/uploads/')) {
       return `${baseUrl}${url}`;
     }

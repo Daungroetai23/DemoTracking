@@ -74,6 +74,7 @@ router.get('/stats', authenticateJWT, async (req, res) => {
 
     const formatUrl = (url) => {
       if (!url) return url;
+      if (url.startsWith('data:')) return url;
       if (url.startsWith('/uploads/')) {
         return `${baseUrl}${url}`;
       }
