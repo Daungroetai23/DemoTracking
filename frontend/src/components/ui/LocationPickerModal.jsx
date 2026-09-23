@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Search, MapPin, Navigation, Check, Loader2, ExternalLink } from 'lucide-react';
+import { X, Search, MapPin, Navigation, Check, Loader2, ExternalLink, Clipboard } from 'lucide-react';
 import L from 'leaflet';
 import api from '../../api/client';
 
@@ -142,6 +142,30 @@ export const parseGoogleMapsOrCoords = (str) => {
   return null;
 };
 
+// รายชื่อพิกัดใจกลางจังหวัดหลักๆ ในไทย สำหรับการบินไปปักหมุดด่วน
+const PROVINCE_COORDS = {
+  'ขอนแก่น': [16.4322, 102.8236],
+  'กรุงเทพ': [13.7563, 100.5018],
+  'เชียงใหม่': [18.7883, 98.9853],
+  'นนทบุรี': [13.8591, 100.5217],
+  'ชลบุรี': [13.3611, 100.9847],
+  'นครราชสีมา': [14.9799, 102.0978],
+  'โคราช': [14.9799, 102.0978],
+  'สงขลา': [7.1897, 100.5954],
+  'หาดใหญ่': [7.0084, 100.4767],
+  'ภูเก็ต': [7.8804, 98.3923],
+  'ระยอง': [12.6814, 101.2816],
+  'อุดรธานี': [17.4138, 102.7872],
+  'พิษณุโลก': [16.8211, 100.2659],
+  'อุบลราชธานี': [15.2448, 104.8473],
+  'สุราษฎร์ธานี': [9.1382, 99.3216],
+  'สมุทรปราการ': [13.5991, 100.5968],
+  'ปทุมธานี': [14.0208, 100.5250],
+  'พระนครศรีอยุธยา': [14.3532, 100.5684],
+  'อยุธยา': [14.3532, 100.5684],
+  'เชียงราย': [19.9072, 99.8325]
+};
+
 export default function LocationPickerModal({
   isOpen,
   onClose,
@@ -163,6 +187,26 @@ export default function LocationPickerModal({
     lat: DEFAULT_CENTER[0],
     lng: DEFAULT_CENTER[1]
   });
+
+  const detectedProvince = Object.keys(PROVINCE_COORDS).find(p => searchQuery.includes(p));
+
+  // ฟังก์ชันคลิกปุ่มวางลิงก์หรือพิกัดจากคลิปบอร์ด
+  const handlePasteFromClipboard = async () => {
+    try {
+      if (!navigator.clipboard?.readText) {
+        alert('เบราว์เซอร์ไม่รองรับการอ่านคลิปบอร์ด กรุณาคลิกขวาแล้ววางลงในช่องค้นหา');
+        return;
+      }
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        const clean = text.trim();
+        setSearchQuery(clean);
+        searchPlace(clean, false);
+      }
+    } catch {
+      alert('กรุณากดคลิกขวาแล้วเลือก "วาง" (Paste) ลงในช่องค้นหา');
+    }
+  };
 
   // ซิงค์ initialLocation เมื่อเปิด modal
   useEffect(() => {
@@ -543,6 +587,16 @@ export default function LocationPickerModal({
 
             <button
               type="button"
+              onClick={handlePasteFromClipboard}
+              title="วางลิงก์ Google Maps หรือพิกัดที่คัดลอกมา"
+              className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1.5 transition-all border border-slate-200 shrink-0"
+            >
+              <Clipboard className="w-3.5 h-3.5 text-blue-600" />
+              <span className="hidden sm:inline">วางพิกัด</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleGetCurrentLocation}
               title="ดึงพิกัด GPS ตำแหน่งปัจจุบันของคุณ"
               className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1.5 transition-all border border-slate-200 shrink-0"
@@ -555,7 +609,7 @@ export default function LocationPickerModal({
           {/* Quick Helper Tip below Search Bar */}
           <div className="mt-1.5 px-1 flex items-center justify-between text-[11px] text-slate-500">
             <span className="truncate">
-              💡 <span className="font-semibold text-blue-700">เคล็ดลับ:</span> สำหรับบริษัท/ร้านค้า สามารถคัดลอกลิงก์หรือพิกัดจาก <span className="font-medium text-slate-700">Google Maps</span> มาวางได้ทันที
+              💡 <span className="font-semibold text-blue-700">เคล็ดลับ:</span> สำหรับบริษัท/ร้านค้า สามารถคัดลอกลิงก์หรือพิกัดจาก <span className="font-medium text-slate-700">Google Maps</span> แล้วกดปุ่ม "วางพิกัด" ได้ทันที
             </span>
           </div>
 
@@ -594,17 +648,54 @@ export default function LocationPickerModal({
                   <Search className="w-3.5 h-3.5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-slate-800">ไม่พบสถานที่ "{searchQuery}" ในแผนที่เสรี (OpenStreetMap)</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                    ระบบแผนที่ฟรีอาจยังไม่มีข้อมูลบริษัทเอกชนหรืออาคารพาณิชย์ทุกแห่งเหมือน Google Maps
+                  <p className="text-xs font-bold text-slate-800">
+                    ไม่พบชื่อ "{searchQuery}" ในระบบแผนที่ฟรี
                   </p>
-                  <div className="mt-2 p-2.5 bg-blue-50/80 border border-blue-100 rounded-xl text-[11px] text-blue-900 space-y-1">
-                    <p className="font-bold flex items-center gap-1">
-                      <span>💡 วิธีปักหมุดที่แม่นยำ 100%:</span>
-                    </p>
-                    <p>1. เปิด <span className="font-semibold">Google Maps</span> แล้วค้นหาสถานที่ที่คุณต้องการ</p>
-                    <p>2. คัดลอก <span className="font-semibold">ลิงก์ URL</span> (ด้านบนเบราว์เซอร์หรือปุ่ม "แชร์") หรือคัดลอกพิกัด เช่น <code className="bg-white px-1.5 py-0.5 rounded text-blue-800 font-mono font-bold">16.3896, 102.8089</code></p>
-                    <p>3. นำมาวางลงในช่องค้นหานี้ ระบบจะปักหมุดตำแหน่งนั้นให้อัตโนมัติทันที</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                    สถานที่นี้เป็นสาขาบริษัทเอกชน ซึ่งมีข้อมูลเฉพาะใน Google Maps
+                  </p>
+
+                  {/* ปุ่มบินไปจังหวัดอัตโนมัติเมื่อระบุชื่อจังหวัดในคำค้นหา */}
+                  {detectedProvince && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const coords = PROVINCE_COORDS[detectedProvince];
+                        if (coords && mapInstanceRef.current) {
+                          mapInstanceRef.current.flyTo(coords, 14);
+                          updateMarkerPosition(coords[0], coords[1], true);
+                          setSearchEmpty(false);
+                        }
+                      }}
+                      className="w-full mt-2.5 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>เลื่อนแผนที่ไปที่ <strong>{detectedProvince}</strong> เพื่อคลิกเลือกปักหมุด</span>
+                    </button>
+                  )}
+
+                  {/* คำแนะนำและปุ่มเปิด Google Maps เพื่อคัดลอกลิงก์ */}
+                  <div className="mt-2.5 p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <p className="text-[11px] font-bold text-slate-700">💡 วิธีปักหมุดตรงอาคารนี้ 100%:</p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(searchQuery)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-1.5 px-2.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
+                        <span>1. เปิดค้นหาใน Google Maps</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={handlePasteFromClipboard}
+                        className="flex-1 py-1.5 px-2.5 rounded-lg bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Clipboard className="w-3.5 h-3.5 text-blue-600" />
+                        <span>2. วางลิงก์หรือพิกัด</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
