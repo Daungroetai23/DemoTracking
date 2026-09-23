@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import api from '../api/client';
 import StatusBadge from '../components/ui/StatusBadge';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
+import MapLinkButton from '../components/ui/MapLinkButton';
 import { formatDate, formatDateShort, PLACEHOLDER_IMAGE } from '../utils/helpers';
 
 export default function AssetDetailPage() {
@@ -115,9 +116,12 @@ export default function AssetDetailPage() {
                 <span className="text-slate-400 font-semibold">วันที่รับเข้า:</span>
                 <span className="text-slate-700 font-bold">{formatDate(asset.dateAdded)}</span>
               </div>
-              <div className="flex justify-between text-sm">
+              <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-400 font-semibold">ตำแหน่งจัดเก็บ:</span>
-                <span className="text-slate-700 font-bold">{asset.location}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-700 font-bold">{asset.location}</span>
+                  <MapLinkButton location={asset.location} showText={false} />
+                </div>
               </div>
             </div>
           </div>
@@ -139,6 +143,7 @@ export default function AssetDetailPage() {
                   <th className="px-4 py-3">วันที่ยืม</th>
                   <th className="px-4 py-3">กำหนดส่งคืน</th>
                   <th className="px-4 py-3">ชื่อลูกค้า</th>
+                  <th className="px-4 py-3">สถานที่ปลายทาง</th>
                   <th className="px-4 py-3 text-center">สถานะ</th>
                   <th className="px-4 py-3 text-right">วันที่คืนจริง</th>
                 </tr>
@@ -149,6 +154,14 @@ export default function AssetDetailPage() {
                     <td className="px-4 py-3 font-semibold text-slate-600">{formatDateShort(t.borrowDate)}</td>
                     <td className="px-4 py-3 font-semibold text-slate-500">{formatDateShort(t.dueDate)}</td>
                     <td className="px-4 py-3 font-bold text-slate-800">{t.borrowerName}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-600">
+                      {t.locationTo ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate max-w-[120px]">{t.locationTo}</span>
+                          <MapLinkButton location={t.locationTo} showText={false} />
+                        </div>
+                      ) : '-'}
+                    </td>
                     <td className="px-4 py-3 text-center">
                       <StatusBadge status={t.status} type="transaction" />
                     </td>

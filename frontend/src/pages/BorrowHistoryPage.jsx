@@ -8,6 +8,7 @@ import StatusBadge from '../components/ui/StatusBadge';
 import { formatDateShort, getLocalDateString } from '../utils/helpers';
 import Modal from '../components/ui/Modal';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import MapLinkButton from '../components/ui/MapLinkButton';
 import { useAuth } from '../contexts/AuthContext';
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#6366f1', '#14b8a6'];
@@ -501,6 +502,7 @@ export default function BorrowHistoryPage() {
                     <th className="px-4 py-3">ชื่ออุปกรณ์</th>
                     <th className="px-4 py-3">วันที่ยืม</th>
                     <th className="px-4 py-3">กำหนดคืน</th>
+                    <th className="px-4 py-3">สถานที่ปลายทาง</th>
                     <th className="px-4 py-3">สถานที่ส่งกลับ</th>
                     <th className="px-4 py-3 text-right">สถานะ</th>
                   </tr>
@@ -512,7 +514,22 @@ export default function BorrowHistoryPage() {
                       <td className="px-4 py-3 font-semibold text-slate-800 truncate max-w-[150px]">{t.assetName}</td>
                       <td className="px-4 py-3 font-semibold text-slate-500">{formatDateShort(t.borrowDate)}</td>
                       <td className="px-4 py-3 font-semibold text-slate-500">{formatDateShort(t.dueDate)}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-500">{t.returnLocation || '-'}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-600">
+                        {t.locationTo ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate max-w-[120px]">{t.locationTo}</span>
+                            <MapLinkButton location={t.locationTo} showText={false} />
+                          </div>
+                        ) : '-'}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-600">
+                        {t.returnLocation ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate max-w-[120px]">{t.returnLocation}</span>
+                            <MapLinkButton location={t.returnLocation} showText={false} />
+                          </div>
+                        ) : '-'}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end">
                           <StatusBadge status={t.status} type="transaction" />

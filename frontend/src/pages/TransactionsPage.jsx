@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRightLeft, Check, AlertCircle, MapPin } from 'lucide-react';
 import api from '../api/client';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
+import LocationPickerModal from '../components/ui/LocationPickerModal';
 import { PLACEHOLDER_IMAGE, getLocalDateString } from '../utils/helpers';
 
 export default function TransactionsPage() {
@@ -13,6 +14,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [message, setMessage] = useState(null);
+  const [mapTarget, setMapTarget] = useState(null); // 'borrowLocationFrom' | 'borrowLocationTo' | 'returnLocation'
 
   // Forms states
   const [borrowForm, setBorrowForm] = useState({
@@ -291,28 +293,66 @@ export default function TransactionsPage() {
             {/* Location From / To */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">
-                  <MapPin className="w-3 h-3 inline mr-1" />ตำแหน่งจัดเก็บ (ต้นทาง)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Auto-fill จากอุปกรณ์"
-                  value={borrowForm.locationFrom}
-                  onChange={(e) => setBorrowForm({ ...borrowForm, locationFrom: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-slate-50 text-slate-500"
-                />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-500">
+                    <MapPin className="w-3 h-3 inline mr-1" />ตำแหน่งจัดเก็บ (ต้นทาง)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setMapTarget('borrowLocationFrom')}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-0.5"
+                  >
+                    <span>แผนที่</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Auto-fill จากอุปกรณ์ หรือเลือกจากแผนที่"
+                    value={borrowForm.locationFrom}
+                    onChange={(e) => setBorrowForm({ ...borrowForm, locationFrom: e.target.value })}
+                    className="w-full px-4 py-3 pr-20 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-slate-50 text-slate-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setMapTarget('borrowLocationFrom')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold flex items-center gap-1 transition-colors border border-slate-200 shadow-2xs"
+                  >
+                    <MapPin className="w-3 h-3 text-blue-600" />
+                    <span>แผนที่</span>
+                  </button>
+                </div>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">
-                  <MapPin className="w-3 h-3 inline mr-1" />สถานที่ปลายทาง (นำไปที่ไหน)
-                </label>
-                <input
-                  type="text"
-                  placeholder="ระบุสถานที่ปลายทาง"
-                  value={borrowForm.locationTo}
-                  onChange={(e) => setBorrowForm({ ...borrowForm, locationTo: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-white text-slate-700"
-                />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-500">
+                    <MapPin className="w-3 h-3 inline mr-1 text-blue-600" />สถานที่ปลายทาง (นำไปที่ไหน)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setMapTarget('borrowLocationTo')}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-0.5"
+                  >
+                    <span>เลือกจากแผนที่</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="ระบุสถานที่ปลายทาง หรือเลือกจากแผนที่"
+                    value={borrowForm.locationTo}
+                    onChange={(e) => setBorrowForm({ ...borrowForm, locationTo: e.target.value })}
+                    className="w-full px-4 py-3 pr-20 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-white text-slate-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setMapTarget('borrowLocationTo')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-semibold flex items-center gap-1 transition-colors border border-blue-100 shadow-2xs"
+                  >
+                    <MapPin className="w-3 h-3 text-blue-600" />
+                    <span>แผนที่</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -426,16 +466,35 @@ export default function TransactionsPage() {
 
             {/* Return Location — สถานที่ส่งคืน */}
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1.5">
-                <MapPin className="w-3 h-3 inline mr-1" />สถานที่ส่งกลับ
-              </label>
-              <input
-                type="text"
-                placeholder="ระบุสถานที่ที่ส่งอุปกรณ์คืน"
-                value={returnForm.returnLocation}
-                onChange={(e) => setReturnForm({ ...returnForm, returnLocation: e.target.value })}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-white text-slate-700"
-              />
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-bold text-slate-500">
+                  <MapPin className="w-3 h-3 inline mr-1 text-blue-600" />สถานที่ส่งกลับ
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setMapTarget('returnLocation')}
+                  className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-0.5"
+                >
+                  <span>เลือกจากแผนที่</span>
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="ระบุสถานที่ที่ส่งอุปกรณ์คืน หรือเลือกจากแผนที่"
+                  value={returnForm.returnLocation}
+                  onChange={(e) => setReturnForm({ ...returnForm, returnLocation: e.target.value })}
+                  className="w-full px-4 py-3 pr-20 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-white text-slate-700"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMapTarget('returnLocation')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-semibold flex items-center gap-1 transition-colors border border-blue-100 shadow-2xs"
+                >
+                  <MapPin className="w-3 h-3 text-blue-600" />
+                  <span>แผนที่</span>
+                </button>
+              </div>
             </div>
 
             {/* Return Notes */}
@@ -470,6 +529,35 @@ export default function TransactionsPage() {
           </form>
         )}
       </div>
+
+      {/* Location Picker Modal */}
+      <LocationPickerModal
+        isOpen={Boolean(mapTarget)}
+        onClose={() => setMapTarget(null)}
+        initialLocation={
+          mapTarget === 'borrowLocationTo'
+            ? borrowForm.locationTo
+            : mapTarget === 'borrowLocationFrom'
+            ? borrowForm.locationFrom
+            : returnForm.returnLocation
+        }
+        title={
+          mapTarget === 'borrowLocationTo'
+            ? 'เลือกสถานที่ปลายทาง (นำไปที่ไหน)'
+            : mapTarget === 'borrowLocationFrom'
+            ? 'เลือกตำแหน่งจัดเก็บ (ต้นทาง)'
+            : 'เลือกสถานที่ส่งกลับ'
+        }
+        onSelectLocation={(loc) => {
+          if (mapTarget === 'borrowLocationTo') {
+            setBorrowForm(prev => ({ ...prev, locationTo: loc.name }));
+          } else if (mapTarget === 'borrowLocationFrom') {
+            setBorrowForm(prev => ({ ...prev, locationFrom: loc.name }));
+          } else if (mapTarget === 'returnLocation') {
+            setReturnForm(prev => ({ ...prev, returnLocation: loc.name }));
+          }
+        }}
+      />
     </div>
   );
 }

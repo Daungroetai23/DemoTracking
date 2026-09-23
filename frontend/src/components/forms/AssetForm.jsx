@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { CATEGORIES as STATIC_CATEGORIES } from '../../utils/helpers';
-import { X, Plus, ImageIcon } from 'lucide-react';
+import { X, Plus, ImageIcon, MapPin } from 'lucide-react';
 import api from '../../api/client';
+import LocationPickerModal from '../ui/LocationPickerModal';
 
 /**
  * แปลงไฟล์รูปภาพเป็น WebP พร้อมบีบอัดขนาดในฝั่งบราวเซอร์
@@ -65,6 +66,7 @@ const CATEGORY_PREFIXES = {
 export default function AssetForm({ asset, assets, onSubmit, onCancel, loading }) {
   const [categories, setCategories] = useState(STATIC_CATEGORIES);
   const [processingImages, setProcessingImages] = useState(false);
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [form, setForm] = useState({
     assetCode: '',
     name: '',
@@ -305,18 +307,38 @@ export default function AssetForm({ asset, assets, onSubmit, onCancel, loading }
 
         {/* ตำแหน่งจัดเก็บ */}
         <div className="sm:col-span-2">
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            ตำแหน่งจัดเก็บ <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            name="location"
-            value={form.location}
-            onChange={handleChange}
-            placeholder="เช่น ที่จัดเก็บอุปกรณ์"
-            required
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-shadow"
-          />
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-slate-700">
+              ตำแหน่งจัดเก็บ <span className="text-red-500">*</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setIsMapModalOpen(true)}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <span>เลือกจากแผนที่</span>
+            </button>
+          </div>
+          <div className="relative">
+            <input
+              type="text"
+              name="location"
+              value={form.location}
+              onChange={handleChange}
+              placeholder="เช่น คลังสินค้า A หรือเลือกจากแผนที่"
+              required
+              className="w-full px-3 py-2.5 pr-24 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-shadow"
+            />
+            <button
+              type="button"
+              onClick={() => setIsMapModalOpen(true)}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-semibold flex items-center gap-1 transition-colors border border-blue-100"
+            >
+              <MapPin className="w-3 h-3" />
+              <span>แผนที่</span>
+            </button>
+          </div>
         </div>
 
         {/* รูปภาพอุปกรณ์ — Multi Image Upload */}
@@ -424,6 +446,16 @@ export default function AssetForm({ asset, assets, onSubmit, onCancel, loading }
           {loading ? 'กำลังบันทึก...' : processingImages ? 'กำลังประมวลผลรูปภาพ...' : 'บันทึก'}
         </button>
       </div>
+      {/* Location Picker Modal */}
+      <LocationPickerModal
+        isOpen={isMapModalOpen}
+        onClose={() => setIsMapModalOpen(false)}
+        initialLocation={form.location}
+        title="เลือกตำแหน่งจัดเก็บอุปกรณ์"
+        onSelectLocation={(loc) => {
+          setForm(prev => ({ ...prev, location: loc.name }));
+        }}
+      />
     </form>
   );
 }
