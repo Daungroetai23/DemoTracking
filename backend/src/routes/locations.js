@@ -102,7 +102,12 @@ router.get('/search', async (req, res) => {
     if (longdoKey) {
       try {
         const longdoUrl = `https://search.longdo.com/mapsearch/json/search?keyword=${encodeURIComponent(query)}&limit=10&key=${longdoKey}`;
-        const longdoRes = await fetch(longdoUrl);
+        const longdoRes = await fetch(longdoUrl, {
+          headers: {
+            'Referer': req.headers.referer || 'http://localhost:5173/',
+            'User-Agent': 'Mozilla/5.0'
+          }
+        });
         if (longdoRes.ok) {
           const longdoData = await longdoRes.json();
           if (Array.isArray(longdoData?.data) && longdoData.data.length > 0) {
@@ -184,7 +189,12 @@ router.get('/reverse', async (req, res) => {
     if (longdoKey) {
       try {
         const longdoRevUrl = `https://api.longdo.com/map/services/address?lat=${lat}&lon=${lng}&key=${longdoKey}`;
-        const longdoRevRes = await fetch(longdoRevUrl);
+        const longdoRevRes = await fetch(longdoRevUrl, {
+          headers: {
+            'Referer': req.headers.referer || 'http://localhost:5173/',
+            'User-Agent': 'Mozilla/5.0'
+          }
+        });
         if (longdoRevRes.ok) {
           const revData = await longdoRevRes.json();
           if (revData && (revData.road || revData.subdistrict || revData.district || revData.province)) {
