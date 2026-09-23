@@ -99,19 +99,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Demo credentials */}
-          <div className="mt-6 pt-5 border-t border-slate-100">
-            <p className="text-xs text-slate-400 text-center mb-2">บัญชีทดสอบ</p>
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={() => { setEmail('admin@demotrack.com'); setPassword('123456'); }}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-all border border-slate-100"
-              >
-                👤 ผู้ดูแลระบบ (Admin)
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Footer */}
