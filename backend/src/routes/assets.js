@@ -7,29 +7,7 @@ import { saveBase64Image, deleteImageFile } from '../utils/fileUpload.js';
 const router = Router();
 const prisma = new PrismaClient();
 
-function formatAssetUrls(asset, baseUrl) {
-  if (!asset) return asset;
-  
-  const formatUrl = (url) => {
-    if (!url) return url;
-    // base64 data URLs are already complete — return as-is
-    if (url.startsWith('data:')) return url;
-    if (url.startsWith('/uploads/')) {
-      return `${baseUrl}${url}`;
-    }
-    return url;
-  };
-  
-  return {
-    ...asset,
-    imageUrl: formatUrl(asset.imageUrl),
-    pdfUrl: formatUrl(asset.pdfUrl),
-    images: asset.images ? asset.images.map(img => ({
-      ...img,
-      imageUrl: formatUrl(img.imageUrl)
-    })) : []
-  };
-}
+
 
 // GET all assets
 router.get('/', authenticateJWT, async (req, res) => {
@@ -65,12 +43,7 @@ router.get('/', authenticateJWT, async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    const host = req.get('host');
-    const protocol = req.protocol;
-    const baseUrl = `${protocol}://${host}`;
-    const formattedAssets = assets.map(a => formatAssetUrls(a, baseUrl));
-
-    return res.json(formattedAssets);
+    return res.json(assets);
   } catch (error) {
     return res.status(500).json({ message: 'ไม่สามารถดึงข้อมูลอุปกรณ์ได้', error: error.message });
   }
@@ -99,10 +72,7 @@ router.get('/:id', authenticateJWT, async (req, res) => {
         return res.status(404).json({ message: 'ไม่พบข้อมูลอุปกรณ์' });
       }
       
-      const host = req.get('host');
-      const protocol = req.protocol;
-      const baseUrl = `${protocol}://${host}`;
-      return res.json(formatAssetUrls(asset, baseUrl));
+      return res.json(asset);
     } catch (error) {
       return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูลอุปกรณ์', error: error.message });
     }
@@ -125,10 +95,7 @@ router.get('/:id', authenticateJWT, async (req, res) => {
       return res.status(404).json({ message: 'ไม่พบข้อมูลอุปกรณ์' });
     }
 
-    const host = req.get('host');
-    const protocol = req.protocol;
-    const baseUrl = `${protocol}://${host}`;
-    return res.json(formatAssetUrls(asset, baseUrl));
+    return res.json(asset);
   } catch (error) {
     return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูลอุปกรณ์', error: error.message });
   }
