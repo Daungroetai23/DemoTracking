@@ -105,7 +105,7 @@ export default function LoginPage() {
             <div className="flex justify-center">
               <button
                 type="button"
-                onClick={() => { setEmail('admin@demotrack.com'); setPassword('password123'); }}
+                onClick={() => { setEmail('admin@demotrack.com'); setPassword('123456'); }}
                 className="w-full px-4 py-2.5 rounded-xl bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-all border border-slate-100"
               >
                 👤 ผู้ดูแลระบบ (Admin)
