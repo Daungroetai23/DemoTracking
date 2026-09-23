@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Search, MapPin, Navigation, Check, Loader2, ExternalLink } from 'lucide-react';
 import L from 'leaflet';
+import api from '../../api/client';
 
 // กำหนดไอคอนหมุดแบบ SVG ที่คมชัด และไม่พึ่งพาไฟล์ PNG ภายนอก
 const createPinIcon = () => {
@@ -14,7 +15,7 @@ const createPinIcon = () => {
         display: flex;
         align-items: center;
         justify-content: center;
-        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35));
       ">
         <svg viewBox="0 0 24 24" width="38" height="38" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
@@ -64,7 +65,7 @@ const formatNominatimAddress = (data) => {
     if (parts.length > 0) {
       return parts.join(', ');
     }
-    return data.display_name.split(',').slice(0, 4).join(',');
+    return data.display_name.split(',').slice(0, 4).join(', ');
   }
   return '';
 };
@@ -83,6 +84,7 @@ export default function LocationPickerModal({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchEmpty, setSearchEmpty] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState({
     name: initialLocation || '',
@@ -100,6 +102,7 @@ export default function LocationPickerModal({
       });
       setSearchQuery('');
       setSearchResults([]);
+      setSearchEmpty(false);
     }
   }, [isOpen, initialLocation]);
 
@@ -107,7 +110,6 @@ export default function LocationPickerModal({
   useEffect(() => {
     if (!isOpen || !mapContainerRef.current) return;
 
-    // ถ้ามี map ตัวเก่าอยู่แล้ว ให้ทำลายก่อน
     if (mapInstanceRef.current) {
       mapInstanceRef.current.remove();
       mapInstanceRef.current = null;
@@ -120,36 +122,29 @@ export default function LocationPickerModal({
     });
     mapInstanceRef.current = map;
 
-    // โหลด Tile Layer ของ OpenStreetMap
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
+      attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    // ปักหมุดเริ่มต้น
     const marker = L.marker(DEFAULT_CENTER, {
       icon: createPinIcon(),
       draggable: true
     }).addTo(map);
     markerRef.current = marker;
 
-    // อีเวนต์เมื่อคลิกบนแผนที่
     map.on('click', async (e) => {
       const { lat, lng } = e.latlng;
       updateMarkerPosition(lat, lng, true);
     });
 
-    // อีเวนต์เมื่อลากหมุดไปปล่อย
     marker.on('dragend', async () => {
       const pos = marker.getLatLng();
       updateMarkerPosition(pos.lat, pos.lng, true);
     });
 
-    // Invalidate size หลังจากเรนเดอร์ใน DOM เพื่อป้องกันแผนที่แสดงผลผิดสัดส่วน
     const timer = setTimeout(() => {
       map.invalidateSize();
-
-      // ถ้ามี initialLocation ลองค้นหาให้อัตโนมัติ
       if (initialLocation && initialLocation.trim()) {
         searchPlace(initialLocation.trim(), false);
       }
@@ -163,6 +158,21 @@ export default function LocationPickerModal({
       }
     };
   }, [isOpen]);
+
+  // ระบบค้นหาอัตโนมัติขณะพิมพ์ (Debounce Live Search 400ms)
+  useEffect(() => {
+    if (!searchQuery || searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      setSearchEmpty(false);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      searchPlace(searchQuery.trim(), true);
+    }, 450);
+
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
 
   // อัปเดตตำแหน่งหมุดและ Reverse Geocoding
   const updateMarkerPosition = async (lat, lng, fetchAddress = true) => {
@@ -182,12 +192,19 @@ export default function LocationPickerModal({
     if (fetchAddress) {
       setIsGeocoding(true);
       try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-          { headers: { 'Accept-Language': 'th, en' } }
-        );
-        const data = await res.json();
-        const address = formatNominatimAddress(data) || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        // 1. ลองดึงผ่าน Backend API ก่อน (ผ่าน proxy เพื่อไม่ให้ติด User-Agent 403)
+        let data = null;
+        try {
+          data = await api.get('/locations/reverse', {
+            params: { lat: lat.toFixed(6), lng: lng.toFixed(6) }
+          });
+        } catch {
+          // Fallback ถ้า backend เรียกไม่สำเร็จ
+          const direct = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+          if (direct.ok) data = await direct.json();
+        }
+
+        const address = formatNominatimAddress(data) || data?.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
         setSelectedLocation({
           name: address,
           lat: Number(lat.toFixed(6)),
@@ -201,23 +218,63 @@ export default function LocationPickerModal({
     }
   };
 
-  // ค้นหาสถานที่ผ่าน Nominatim API
+  // ค้นหาสถานที่ผ่าน Backend API (พร้อม Fallback ไปยัง Photon)
   const searchPlace = async (queryText, showDropdown = true) => {
     if (!queryText || !queryText.trim()) return;
     setIsSearching(true);
+    setSearchEmpty(false);
 
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryText)}&countrycodes=th&limit=5&addressdetails=1`,
-        { headers: { 'Accept-Language': 'th, en' } }
-      );
-      const results = await res.json();
+      let results = [];
 
-      if (results && results.length > 0) {
+      // 1. ค้นหาผ่าน Backend Proxy (เสถียรที่สุดและไม่โดนบล็อก)
+      try {
+        const res = await api.get('/locations/search', {
+          params: { q: queryText }
+        });
+        if (Array.isArray(res) && res.length > 0) {
+          results = res;
+        }
+      } catch (backendErr) {
+        console.warn('Backend location search failed, falling back to Photon:', backendErr);
+      }
+
+      // 2. ถ้า Backend ไม่มีผลลัพธ์ ลองดึงจาก Photon Komoot API ตรงๆ (CORS friendly)
+      if (results.length === 0) {
+        try {
+          const photonRes = await fetch(
+            `https://photon.komoot.io/api/?q=${encodeURIComponent(queryText)}&limit=6&bbox=97.3,5.6,105.7,20.5`
+          );
+          if (photonRes.ok) {
+            const photonData = await photonRes.json();
+            results = (photonData.features || []).map(f => {
+              const props = f.properties || {};
+              const coords = f.geometry?.coordinates || [0, 0];
+              const parts = [props.name, props.street, props.district, props.city, props.state].filter(Boolean);
+              return {
+                lat: String(coords[1]),
+                lon: String(coords[0]),
+                display_name: parts.join(', ') || props.name || queryText,
+                name: props.name || '',
+                address: {
+                  road: props.street,
+                  city: props.city,
+                  state: props.state
+                }
+              };
+            });
+          }
+        } catch (photonErr) {
+          console.error('Photon fallback failed:', photonErr);
+        }
+      }
+
+      if (results.length > 0) {
         if (showDropdown) {
           setSearchResults(results);
+          setSearchEmpty(false);
         } else {
-          // เลือกผลลัพธ์แรกทันที
+          // เลือกผลลัพธ์แรกและย้ายหมุดทันที
           const first = results[0];
           const lat = parseFloat(first.lat);
           const lon = parseFloat(first.lon);
@@ -233,9 +290,11 @@ export default function LocationPickerModal({
         }
       } else if (showDropdown) {
         setSearchResults([]);
+        setSearchEmpty(true);
       }
     } catch (err) {
       console.error('Search error:', err);
+      if (showDropdown) setSearchEmpty(true);
     } finally {
       setIsSearching(false);
     }
@@ -243,7 +302,11 @@ export default function LocationPickerModal({
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    searchPlace(searchQuery, true);
+    if (searchResults.length > 0) {
+      handleSelectSearchResult(searchResults[0]);
+    } else {
+      searchPlace(searchQuery, false);
+    }
   };
 
   const handleSelectSearchResult = (result) => {
@@ -253,6 +316,7 @@ export default function LocationPickerModal({
 
     setSelectedLocation({ name, lat, lng: lon });
     setSearchResults([]);
+    setSearchEmpty(false);
     setSearchQuery(name);
 
     if (mapInstanceRef.current) {
@@ -313,7 +377,7 @@ export default function LocationPickerModal({
             </div>
             <div>
               <h3 className="font-bold text-slate-800 text-sm sm:text-base">{title}</h3>
-              <p className="text-[11px] text-slate-400 font-medium">ค้นหาหรือคลิกบนแผนที่เพื่อปักหมุด</p>
+              <p className="text-[11px] text-slate-400 font-medium">พิมพ์ค้นหาหรือคลิกบนแผนที่เพื่อปักหมุด</p>
             </div>
           </div>
           <button
@@ -334,13 +398,18 @@ export default function LocationPickerModal({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="พิมพ์ชื่อสถานที่, อาคาร, บริษัท, ถนน..."
-                className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium bg-slate-50/50"
+                placeholder="พิมพ์ชื่อสถานที่, อาคาร, บริษัท, ถนน, ตำบล..."
+                className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium bg-slate-50/60"
               />
-              {searchQuery && (
+              {isSearching && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                </div>
+              )}
+              {searchQuery && !isSearching && (
                 <button
                   type="button"
-                  onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                  onClick={() => { setSearchQuery(''); setSearchResults([]); setSearchEmpty(false); }}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -351,9 +420,9 @@ export default function LocationPickerModal({
             <button
               type="submit"
               disabled={isSearching || !searchQuery.trim()}
-              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold text-xs flex items-center gap-1.5 transition-all shadow-xs"
+              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold text-xs flex items-center gap-1.5 transition-all shadow-xs shrink-0"
             >
-              {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+              <Search className="w-3.5 h-3.5" />
               <span>ค้นหา</span>
             </button>
 
@@ -361,7 +430,7 @@ export default function LocationPickerModal({
               type="button"
               onClick={handleGetCurrentLocation}
               title="ดึงพิกัด GPS ตำแหน่งปัจจุบันของคุณ"
-              className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1.5 transition-all border border-slate-200 shrink-0"
+              className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1.5 transition-all border border-slate-200 shrink-0"
             >
               <Navigation className="w-3.5 h-3.5 text-blue-600" />
               <span className="hidden sm:inline">ตำแหน่งของฉัน</span>
@@ -370,7 +439,10 @@ export default function LocationPickerModal({
 
           {/* Search Results Dropdown */}
           {searchResults.length > 0 && (
-            <div className="absolute top-full left-3 right-3 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto z-20">
+            <div className="absolute top-full left-3 right-3 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden max-h-52 overflow-y-auto z-30 animate-fadeIn">
+              <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                ผลการค้นหา ({searchResults.length})
+              </div>
               {searchResults.map((item, idx) => (
                 <button
                   key={idx}
@@ -391,6 +463,14 @@ export default function LocationPickerModal({
               ))}
             </div>
           )}
+
+          {/* Empty search alert */}
+          {searchEmpty && !isSearching && searchQuery.trim() && (
+            <div className="absolute top-full left-3 right-3 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-lg p-3 text-center z-30">
+              <p className="text-xs font-semibold text-slate-600">ไม่พบสถานที่ "{searchQuery}"</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">ลองพิมพ์ชื่อสถานที่ใกล้เคียง หรือคลิกปักหมุดบนแผนที่โดยตรง</p>
+            </div>
+          )}
         </div>
 
         {/* Map Container */}
@@ -399,7 +479,7 @@ export default function LocationPickerModal({
 
           {/* Geocoding indicator overlay */}
           {isGeocoding && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-slate-900/80 text-white text-xs font-semibold flex items-center gap-2 shadow-lg backdrop-blur-xs z-10 animate-fadeIn">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-slate-900/85 text-white text-xs font-semibold flex items-center gap-2 shadow-lg backdrop-blur-xs z-10 animate-fadeIn">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
               <span>กำลังดึงชื่อสถานที่...</span>
             </div>

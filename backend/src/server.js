@@ -11,6 +11,7 @@ import dashboardRouter from './routes/dashboard.js';
 import reportsRouter from './routes/reports.js';
 import usersRouter from './routes/users.js';
 import categoriesRouter from './routes/categories.js';
+import locationsRouter from './routes/locations.js';
 
 dotenv.config();
 
@@ -52,6 +53,7 @@ app.use('/api/dashboard', dashboardRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/categories', categoriesRouter);
+app.use('/api/locations', locationsRouter);
 
 app.get('/api/health', async (req, res) => {
   try {
