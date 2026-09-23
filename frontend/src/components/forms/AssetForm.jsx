@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { CATEGORIES as STATIC_CATEGORIES } from '../../utils/helpers';
-import { X, Plus, ImageIcon } from 'lucide-react';
+import { X, Plus, ImageIcon, FileText } from 'lucide-react';
 import api from '../../api/client';
 
 /**
