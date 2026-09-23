@@ -70,6 +70,78 @@ const formatNominatimAddress = (data) => {
   return '';
 };
 
+/**
+ * ฟังก์ชันแกะพิกัดและชื่อสถานที่จาก URL Google Maps หรือข้อความพิกัด
+ */
+export const parseGoogleMapsOrCoords = (str) => {
+  if (!str || typeof str !== 'string') return null;
+  const rawText = str.trim();
+
+  // 1. ตรวจสอบว่ามี URL แฝงอยู่ในข้อความหรือไม่ (เช่น กรณีคัดลอกจากปุ่มแชร์ Google Maps บนมือถือ)
+  const urlMatch = rawText.match(/https?:\/\/[^\s]+/i);
+  const text = urlMatch ? urlMatch[0] : rawText;
+  const attachedName = urlMatch ? rawText.replace(urlMatch[0], '').trim() : '';
+
+  // 2. ตรวจจับพิกัดละติจูด, ลองจิจูดโดยตรง เช่น 16.3891893, 102.808504 หรือ (16.38961, 102.8089905)
+  const coordRegex = /^[\(\[]?(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)[\)\]]?$/;
+  const coordMatch = text.match(coordRegex);
+  if (coordMatch) {
+    return {
+      lat: parseFloat(coordMatch[1]),
+      lng: parseFloat(coordMatch[2]),
+      name: attachedName || `พิกัด ${coordMatch[1]}, ${coordMatch[2]}`
+    };
+  }
+
+  // 3. แกะพิกัดจาก Google Maps URL
+  if (
+    text.includes('google.com/maps') ||
+    text.includes('maps.google.com') ||
+    text.includes('maps.app.goo.gl') ||
+    text.includes('goo.gl/maps')
+  ) {
+    const pinMatch = text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    const atMatch = text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const qMatch = text.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const llMatch = text.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
+
+    let lat = null, lng = null;
+    if (pinMatch) {
+      lat = parseFloat(pinMatch[1]);
+      lng = parseFloat(pinMatch[2]);
+    } else if (atMatch) {
+      lat = parseFloat(atMatch[1]);
+      lng = parseFloat(atMatch[2]);
+    } else if (qMatch) {
+      lat = parseFloat(qMatch[1]);
+      lng = parseFloat(qMatch[2]);
+    } else if (llMatch) {
+      lat = parseFloat(llMatch[1]);
+      lng = parseFloat(llMatch[2]);
+    }
+
+    let name = attachedName;
+    const placeMatch = text.match(/\/place\/([^/@?]+)/);
+    if (placeMatch && !name) {
+      try {
+        name = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+      } catch {
+        name = placeMatch[1].replace(/\+/g, ' ');
+      }
+    }
+
+    if (lat !== null && lng !== null) {
+      return {
+        lat: Number(lat.toFixed(6)),
+        lng: Number(lng.toFixed(6)),
+        name: name || `พิกัด ${lat.toFixed(5)}, ${lng.toFixed(5)}`
+      };
+    }
+  }
+
+  return null;
+};
+
 export default function LocationPickerModal({
   isOpen,
   onClose,
@@ -218,19 +290,62 @@ export default function LocationPickerModal({
     }
   };
 
-  // ค้นหาสถานที่ผ่าน Backend API (พร้อม Fallback ไปยัง Photon)
+  // ค้นหาสถานที่ผ่าน Google Maps URL / พิกัด / Backend API / Photon
   const searchPlace = async (queryText, showDropdown = true) => {
     if (!queryText || !queryText.trim()) return;
+    const cleanText = queryText.trim();
     setIsSearching(true);
     setSearchEmpty(false);
 
     try {
+      // 0. ตรวจสอบทันทีก่อนว่าผู้ใช้วาง Google Maps URL หรือพิมพ์พิกัดละติจูด,ลองจิจูด มาหรือไม่
+      const localParsed = parseGoogleMapsOrCoords(cleanText);
+      if (localParsed) {
+        setIsSearching(false);
+        setSelectedLocation(localParsed);
+        setSearchQuery(localParsed.name);
+        setSearchResults([]);
+        setSearchEmpty(false);
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.flyTo([localParsed.lat, localParsed.lng], 17);
+        }
+        if (markerRef.current) {
+          markerRef.current.setLatLng([localParsed.lat, localParsed.lng]);
+        }
+        return;
+      }
+
+      // 0.1 ตรวจสอบกรณีเป็น short link (maps.app.goo.gl หรือ goo.gl/maps)
+      if (cleanText.includes('maps.app.goo.gl') || cleanText.includes('goo.gl/maps')) {
+        try {
+          const res = await api.get('/locations/parse-url', {
+            params: { url: cleanText }
+          });
+          if (res && res.lat && res.lng) {
+            setIsSearching(false);
+            setSelectedLocation(res);
+            setSearchQuery(res.name);
+            setSearchResults([]);
+            setSearchEmpty(false);
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.flyTo([res.lat, res.lng], 17);
+            }
+            if (markerRef.current) {
+              markerRef.current.setLatLng([res.lat, res.lng]);
+            }
+            return;
+          }
+        } catch (err) {
+          console.warn('Failed to parse short link:', err);
+        }
+      }
+
       let results = [];
 
       // 1. ค้นหาผ่าน Backend Proxy (เสถียรที่สุดและไม่โดนบล็อก)
       try {
         const res = await api.get('/locations/search', {
-          params: { q: queryText }
+          params: { q: cleanText }
         });
         if (Array.isArray(res) && res.length > 0) {
           results = res;
@@ -243,7 +358,7 @@ export default function LocationPickerModal({
       if (results.length === 0) {
         try {
           const photonRes = await fetch(
-            `https://photon.komoot.io/api/?q=${encodeURIComponent(queryText)}&limit=6&bbox=97.3,5.6,105.7,20.5`
+            `https://photon.komoot.io/api/?q=${encodeURIComponent(cleanText)}&limit=6&bbox=97.3,5.6,105.7,20.5`
           );
           if (photonRes.ok) {
             const photonData = await photonRes.json();
@@ -254,7 +369,7 @@ export default function LocationPickerModal({
               return {
                 lat: String(coords[1]),
                 lon: String(coords[0]),
-                display_name: parts.join(', ') || props.name || queryText,
+                display_name: parts.join(', ') || props.name || cleanText,
                 name: props.name || '',
                 address: {
                   road: props.street,
@@ -398,7 +513,7 @@ export default function LocationPickerModal({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="พิมพ์ชื่อสถานที่, อาคาร, บริษัท, ถนน, ตำบล..."
+                placeholder="วางลิงก์ Google Maps / พิกัด (lat, lng) หรือค้นหาถนน, ตำบล..."
                 className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium bg-slate-50/60"
               />
               {isSearching && (
@@ -437,6 +552,13 @@ export default function LocationPickerModal({
             </button>
           </form>
 
+          {/* Quick Helper Tip below Search Bar */}
+          <div className="mt-1.5 px-1 flex items-center justify-between text-[11px] text-slate-500">
+            <span className="truncate">
+              💡 <span className="font-semibold text-blue-700">เคล็ดลับ:</span> สำหรับบริษัท/ร้านค้า สามารถคัดลอกลิงก์หรือพิกัดจาก <span className="font-medium text-slate-700">Google Maps</span> มาวางได้ทันที
+            </span>
+          </div>
+
           {/* Search Results Dropdown */}
           {searchResults.length > 0 && (
             <div className="absolute top-full left-3 right-3 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden max-h-52 overflow-y-auto z-30 animate-fadeIn">
@@ -464,11 +586,28 @@ export default function LocationPickerModal({
             </div>
           )}
 
-          {/* Empty search alert */}
+          {/* Empty search alert with smart instructions */}
           {searchEmpty && !isSearching && searchQuery.trim() && (
-            <div className="absolute top-full left-3 right-3 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-lg p-3 text-center z-30">
-              <p className="text-xs font-semibold text-slate-600">ไม่พบสถานที่ "{searchQuery}"</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">ลองพิมพ์ชื่อสถานที่ใกล้เคียง หรือคลิกปักหมุดบนแผนที่โดยตรง</p>
+            <div className="absolute top-full left-3 right-3 mt-1.5 bg-white border border-amber-200 rounded-xl shadow-2xl p-3.5 z-30 animate-fadeIn text-left">
+              <div className="flex items-start gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0 mt-0.5">
+                  <Search className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-slate-800">ไม่พบสถานที่ "{searchQuery}" ในแผนที่เสรี (OpenStreetMap)</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                    ระบบแผนที่ฟรีอาจยังไม่มีข้อมูลบริษัทเอกชนหรืออาคารพาณิชย์ทุกแห่งเหมือน Google Maps
+                  </p>
+                  <div className="mt-2 p-2.5 bg-blue-50/80 border border-blue-100 rounded-xl text-[11px] text-blue-900 space-y-1">
+                    <p className="font-bold flex items-center gap-1">
+                      <span>💡 วิธีปักหมุดที่แม่นยำ 100%:</span>
+                    </p>
+                    <p>1. เปิด <span className="font-semibold">Google Maps</span> แล้วค้นหาสถานที่ที่คุณต้องการ</p>
+                    <p>2. คัดลอก <span className="font-semibold">ลิงก์ URL</span> (ด้านบนเบราว์เซอร์หรือปุ่ม "แชร์") หรือคัดลอกพิกัด เช่น <code className="bg-white px-1.5 py-0.5 rounded text-blue-800 font-mono font-bold">16.3896, 102.8089</code></p>
+                    <p>3. นำมาวางลงในช่องค้นหานี้ ระบบจะปักหมุดตำแหน่งนั้นให้อัตโนมัติทันที</p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>

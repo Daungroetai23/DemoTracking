@@ -3,6 +3,76 @@ import { Router } from 'express';
 const router = Router();
 const USER_AGENT = 'DemoTracking/1.0 (https://demo-tracking-alpha.vercel.app; info@demotrack.com)';
 
+// ฟังก์ชันแกะพิกัดและชื่อสถานที่จาก URL Google Maps หรือข้อความพิกัด
+export function parseGoogleMapsUrl(str) {
+  if (!str || typeof str !== 'string') return null;
+  const rawText = str.trim();
+
+  // 1. ตรวจสอบว่ามี URL แฝงอยู่ในข้อความหรือไม่ (เช่น กรณีคัดลอกจากปุ่มแชร์ของ Google Maps บนมือถือ)
+  const urlMatch = rawText.match(/https?:\/\/[^\s]+/i);
+  const text = urlMatch ? urlMatch[0] : rawText;
+  const attachedName = urlMatch ? rawText.replace(urlMatch[0], '').trim() : '';
+
+  // 2. ตรวจจับพิกัดละติจูด, ลองจิจูดโดยตรง เช่น 16.3891893, 102.808504 หรือ (16.38961, 102.8089905)
+  const coordRegex = /^[\(\[]?(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)[\)\]]?$/;
+  const coordMatch = text.match(coordRegex);
+  if (coordMatch) {
+    return {
+      lat: parseFloat(coordMatch[1]),
+      lng: parseFloat(coordMatch[2]),
+      name: attachedName || `พิกัด ${coordMatch[1]}, ${coordMatch[2]}`
+    };
+  }
+
+  // 3. แกะพิกัดจาก Google Maps URL
+  if (
+    text.includes('google.com/maps') ||
+    text.includes('maps.google.com') ||
+    text.includes('maps.app.goo.gl') ||
+    text.includes('goo.gl/maps')
+  ) {
+    const pinMatch = text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    const atMatch = text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const qMatch = text.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const llMatch = text.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
+
+    let lat = null, lng = null;
+    if (pinMatch) {
+      lat = parseFloat(pinMatch[1]);
+      lng = parseFloat(pinMatch[2]);
+    } else if (atMatch) {
+      lat = parseFloat(atMatch[1]);
+      lng = parseFloat(atMatch[2]);
+    } else if (qMatch) {
+      lat = parseFloat(qMatch[1]);
+      lng = parseFloat(qMatch[2]);
+    } else if (llMatch) {
+      lat = parseFloat(llMatch[1]);
+      lng = parseFloat(llMatch[2]);
+    }
+
+    let name = attachedName;
+    const placeMatch = text.match(/\/place\/([^/@?]+)/);
+    if (placeMatch && !name) {
+      try {
+        name = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+      } catch {
+        name = placeMatch[1].replace(/\+/g, ' ');
+      }
+    }
+
+    if (lat !== null && lng !== null) {
+      return {
+        lat: Number(lat.toFixed(6)),
+        lng: Number(lng.toFixed(6)),
+        name: name || `พิกัด ${lat.toFixed(5)}, ${lng.toFixed(5)}`
+      };
+    }
+  }
+
+  return null;
+}
+
 // ค้นหาสถานที่ (Search Geocoding)
 router.get('/search', async (req, res) => {
   const { q } = req.query;
@@ -11,6 +81,20 @@ router.get('/search', async (req, res) => {
   }
 
   const query = String(q).trim();
+
+  // ตรวจสอบว่าผู้ใช้วางลิงก์ Google Maps หรือพิมพ์พิกัดมาโดยตรงหรือไม่
+  const directParsed = parseGoogleMapsUrl(query);
+  if (directParsed) {
+    return res.json([
+      {
+        lat: String(directParsed.lat),
+        lon: String(directParsed.lng),
+        display_name: directParsed.name,
+        name: directParsed.name,
+        isDirectGoogleMaps: true
+      }
+    ]);
+  }
 
   try {
     // 1. ลองค้นหาผ่าน OpenStreetMap Nominatim พร้อม User-Agent ที่ถูกต้อง
@@ -85,6 +169,34 @@ router.get('/reverse', async (req, res) => {
   } catch (error) {
     console.error('Reverse geocode error:', error);
     return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงชื่อสถานที่', error: error.message });
+  }
+});
+
+// แกะพิกัดจาก Short Link ของ Google Maps (เช่น maps.app.goo.gl)
+router.get('/parse-url', async (req, res) => {
+  const { url } = req.query;
+  if (!url) {
+    return res.status(400).json({ message: 'จำเป็นต้องระบุ URL' });
+  }
+
+  try {
+    let finalUrl = String(url).trim();
+    if (finalUrl.includes('goo.gl') || finalUrl.includes('maps.app.goo.gl')) {
+      const resp = await fetch(finalUrl, {
+        method: 'HEAD',
+        redirect: 'follow',
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      finalUrl = resp.url || finalUrl;
+    }
+
+    const parsed = parseGoogleMapsUrl(finalUrl);
+    if (parsed) {
+      return res.json(parsed);
+    }
+    return res.status(404).json({ message: 'ไม่สามารถระบุพิกัดจากลิงก์นี้ได้' });
+  } catch (err) {
+    return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการอ่านลิงก์', error: err.message });
   }
 });
 
