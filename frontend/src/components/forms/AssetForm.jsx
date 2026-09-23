@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { CATEGORIES as STATIC_CATEGORIES } from '../../utils/helpers';
-import { X, Plus, ImageIcon, FileText } from 'lucide-react';
+import { X, Plus, ImageIcon } from 'lucide-react';
 import api from '../../api/client';
 
 /**
@@ -73,7 +73,6 @@ export default function AssetForm({ asset, assets, onSubmit, onCancel, loading }
     spec: '',
     location: '',
     imageUrl: '',
-    pdfUrl: '',
     images: [], // array of base64 data URLs
     status: 'READY',
   });
@@ -135,7 +134,6 @@ export default function AssetForm({ asset, assets, onSubmit, onCancel, loading }
         spec: asset.spec || '',
         location: asset.location || '',
         imageUrl: asset.imageUrl || '',
-        pdfUrl: asset.pdfUrl || '',
         images: existingImages,
         status: asset.status || 'READY',
       });
@@ -393,70 +391,6 @@ export default function AssetForm({ asset, assets, onSubmit, onCancel, loading }
             )}
           </div>
         </div>
-
-        {/* เอกสารแนบ PDF (คู่มือ / เอกสารสเปก) */}
-        <div className="sm:col-span-2">
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            เอกสารแนบ PDF <span className="text-[10px] text-slate-400 font-normal">(คู่มือการใช้งาน หรือเอกสารสเปกอุปกรณ์)</span>
-          </label>
-          <div className="border border-dashed border-slate-200 rounded-xl p-4 bg-slate-50/50">
-            {form.pdfUrl ? (
-              <div className="flex items-center justify-between p-3 rounded-lg bg-white border border-slate-200 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-red-600">
-                    <FileText className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">เอกสารคู่มือ/สเปกอุปกรณ์ (PDF)</p>
-                    <p className="text-[10px] text-slate-400 font-semibold">พร้อมใช้งานในระบบ</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setForm(prev => ({ ...prev, pdfUrl: '' }))}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                  title="ลบเอกสาร PDF"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    if (file.type !== 'application/pdf') {
-                      alert('กรุณาเลือกไฟล์ PDF เท่านั้น');
-                      return;
-                    }
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                      setForm(prev => ({ ...prev, pdfUrl: event.target?.result || '' }));
-                    };
-                    reader.readAsDataURL(file);
-                    e.target.value = '';
-                  }}
-                  className="hidden"
-                  id="asset-pdf-file"
-                />
-                <label
-                  htmlFor="asset-pdf-file"
-                  className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors bg-white shadow-sm"
-                >
-                  <FileText className="w-4 h-4 text-red-500" />
-                  แนบไฟล์ PDF...
-                </label>
-                <p className="text-[10px] text-slate-400 font-semibold">
-                  รองรับเฉพาะไฟล์ .pdf ขนาดไม่เกิน 10MB
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* สเปค */}
         <div className="sm:col-span-2">
           <label className="block text-sm font-medium text-slate-700 mb-1">

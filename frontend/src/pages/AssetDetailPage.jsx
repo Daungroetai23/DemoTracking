@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, FileText } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import api from '../api/client';
 import StatusBadge from '../components/ui/StatusBadge';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -119,20 +119,6 @@ export default function AssetDetailPage() {
                 <span className="text-slate-400 font-semibold">ตำแหน่งจัดเก็บ:</span>
                 <span className="text-slate-700 font-bold">{asset.location}</span>
               </div>
-              {asset.pdfUrl && (
-                <div className="flex justify-between items-center text-sm pt-2">
-                  <span className="text-slate-400 font-semibold">เอกสารสเปก / คู่มือ:</span>
-                  <a
-                    href={asset.pdfUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-50 text-red-600 border border-red-100 font-bold text-xs hover:bg-red-100 transition-colors"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    ดูเอกสาร PDF
-                  </a>
-                </div>
-              )}
             </div>
           </div>
 

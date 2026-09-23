@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Eye, Pencil, Trash2, Package, FileText } from 'lucide-react';
+import { Plus, Search, Eye, Pencil, Trash2, Package } from 'lucide-react';
 import api from '../api/client';
 import StatusBadge from '../components/ui/StatusBadge';
 import Modal from '../components/ui/Modal';
@@ -206,17 +206,6 @@ export default function AssetsPage() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <p className="font-bold text-slate-800 truncate max-w-[200px]">{asset.name}</p>
-                            {asset.pdfUrl && (
-                              <a
-                                href={asset.pdfUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1 rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
-                                title="ดูเอกสาร PDF"
-                              >
-                                <FileText className="w-3 h-3" />
-                              </a>
-                            )}
                           </div>
                           <p className="text-[10px] text-slate-400 font-semibold">{asset.spec}</p>
                         </div>
