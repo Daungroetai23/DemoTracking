@@ -97,7 +97,34 @@ router.get('/search', async (req, res) => {
   }
 
   try {
-    // 1. ลองค้นหาผ่าน OpenStreetMap Nominatim พร้อม User-Agent ที่ถูกต้อง
+    // 1. ถ้ามีการตั้งค่า LONGDO_MAP_KEY ให้ค้นหาผ่าน Longdo Map API เป็นลำดับแรก (ฐานข้อมูลสถานที่ในไทยแน่นและแม่นยำมาก)
+    const longdoKey = process.env.LONGDO_MAP_KEY;
+    if (longdoKey) {
+      try {
+        const longdoUrl = `https://search.longdo.com/mapsearch/json/search?keyword=${encodeURIComponent(query)}&limit=10&key=${longdoKey}`;
+        const longdoRes = await fetch(longdoUrl);
+        if (longdoRes.ok) {
+          const longdoData = await longdoRes.json();
+          if (Array.isArray(longdoData?.data) && longdoData.data.length > 0) {
+            const mapped = longdoData.data.map(item => ({
+              lat: String(item.lat),
+              lon: String(item.lon),
+              display_name: [item.name, item.address].filter(Boolean).join(', '),
+              name: item.name || '',
+              address: {
+                road: item.address
+              },
+              source: 'longdo'
+            }));
+            return res.json(mapped);
+          }
+        }
+      } catch (longdoErr) {
+        console.warn('Longdo search error, fallback to OSM:', longdoErr);
+      }
+    }
+
+    // 2. ลองค้นหาผ่าน OpenStreetMap Nominatim พร้อม User-Agent ที่ถูกต้อง
     const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=th&limit=6&addressdetails=1`;
     const response = await fetch(nominatimUrl, {
       headers: {
@@ -113,7 +140,7 @@ router.get('/search', async (req, res) => {
       }
     }
 
-    // 2. ถ้า Nominatim ไม่พบผลลัพธ์ ให้ Fallback ไปที่ Photon Komoot
+    // 3. ถ้า Nominatim ไม่พบผลลัพธ์ ให้ Fallback ไปที่ Photon Komoot
     const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6&bbox=97.3,5.6,105.7,20.5`;
     const photonRes = await fetch(photonUrl);
     if (photonRes.ok) {
@@ -152,6 +179,42 @@ router.get('/reverse', async (req, res) => {
   }
 
   try {
+    // 1. ถ้ามี LONGDO_MAP_KEY ให้ใช้ Longdo Reverse Geocoding ได้ชื่อภาษาไทยละเอียดมาก
+    const longdoKey = process.env.LONGDO_MAP_KEY;
+    if (longdoKey) {
+      try {
+        const longdoRevUrl = `https://api.longdo.com/map/services/address?lat=${lat}&lon=${lng}&key=${longdoKey}`;
+        const longdoRevRes = await fetch(longdoRevUrl);
+        if (longdoRevRes.ok) {
+          const revData = await longdoRevRes.json();
+          if (revData && (revData.road || revData.subdistrict || revData.district || revData.province)) {
+            const parts = [
+              revData.road,
+              revData.subdistrict,
+              revData.district,
+              revData.province,
+              revData.postcode
+            ].filter(Boolean);
+            return res.json({
+              display_name: parts.join(' '),
+              name: revData.road || revData.subdistrict || '',
+              address: {
+                road: revData.road,
+                subdistrict: revData.subdistrict,
+                district: revData.district,
+                province: revData.province,
+                postcode: revData.postcode
+              },
+              source: 'longdo'
+            });
+          }
+        }
+      } catch (revErr) {
+        console.warn('Longdo reverse geocode error:', revErr);
+      }
+    }
+
+    // 2. Fallback ใช้ OpenStreetMap Nominatim
     const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
     const response = await fetch(nominatimUrl, {
       headers: {
