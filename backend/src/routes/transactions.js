@@ -140,26 +140,44 @@ router.post('/borrow', authenticateJWT, async (req, res) => {
   const { assetCode, borrowerName, customerName, salesTeam, department, organization, borrowDate, dueDate, locationFrom, locationTo, notes } = req.body;
 
   if (!assetCode || !borrowerName || !dueDate) {
-    return res.status(400).json({ message: 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน' });
+    return res.status(400).json({ message: 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน (รหัสอุปกรณ์, ผู้ยืม, กำหนดวันคืน)' });
+  }
+
+  // Date validation
+  const parsedBorrowDate = borrowDate ? new Date(borrowDate) : new Date();
+  const parsedDueDate = new Date(dueDate);
+
+  if (isNaN(parsedBorrowDate.getTime()) || isNaN(parsedDueDate.getTime())) {
+    return res.status(400).json({ message: 'รูปแบบวันที่ยืมหรือกำหนดวันคืนไม่ถูกต้อง' });
+  }
+
+  const borrowDay = new Date(parsedBorrowDate).setHours(0, 0, 0, 0);
+  const dueDay = new Date(parsedDueDate).setHours(0, 0, 0, 0);
+  if (dueDay < borrowDay) {
+    return res.status(400).json({ message: 'กำหนดวันคืนต้องไม่น้อยกว่าวันที่ยืม' });
   }
 
   try {
-    // Find asset
-    const asset = await prisma.asset.findUnique({
-      where: { assetCode }
-    });
-
-    if (!asset) {
-      return res.status(404).json({ message: 'ไม่พบรหัสอุปกรณ์นี้ในระบบ' });
-    }
-
-    if (asset.status !== AssetStatus.READY) {
-      const statusText = asset.status === AssetStatus.BORROWED ? 'ถูกยืมอยู่' : 'อยู่ระหว่างการซ่อมบำรุง';
-      return res.status(400).json({ message: `อุปกรณ์นี้ไม่พร้อมสำหรับการยืม (สถานะขณะนี้: ${statusText})` });
-    }
-
-    // Create transaction and update asset status in a transaction
+    // Create transaction and update asset status atomically inside a transaction to prevent race conditions
     const result = await prisma.$transaction(async (tx) => {
+      // Find asset inside the transaction to ensure atomic check
+      const asset = await tx.asset.findUnique({
+        where: { assetCode }
+      });
+
+      if (!asset) {
+        const err = new Error('ไม่พบรหัสอุปกรณ์นี้ในระบบ');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      if (asset.status !== AssetStatus.READY) {
+        const statusText = asset.status === AssetStatus.BORROWED ? 'ถูกยืมอยู่' : 'อยู่ระหว่างการซ่อมบำรุง';
+        const err = new Error(`อุปกรณ์นี้ไม่พร้อมสำหรับการยืม (สถานะขณะนี้: ${statusText})`);
+        err.statusCode = 400;
+        throw err;
+      }
+
       const transaction = await tx.transaction.create({
         data: {
           assetId: asset.id,
@@ -168,8 +186,8 @@ router.post('/borrow', authenticateJWT, async (req, res) => {
           salesTeam: salesTeam || '',
           department: department || '',
           organization: organization || '',
-          borrowDate: borrowDate ? new Date(borrowDate) : new Date(),
-          dueDate: new Date(dueDate),
+          borrowDate: parsedBorrowDate,
+          dueDate: parsedDueDate,
           locationFrom: locationFrom || asset.location,
           locationTo: locationTo || '',
           status: TransactionStatus.ACTIVE,
@@ -187,70 +205,109 @@ router.post('/borrow', authenticateJWT, async (req, res) => {
 
     return res.status(201).json(result);
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการทำรายการยืม', error: error.message });
   }
 });
 
 // POST return transaction
 router.post('/return', authenticateJWT, async (req, res) => {
-  const { assetCode, returnLocation, notes } = req.body;
+  const { assetCode, returnLocation, condition, status: newStatus, notes } = req.body;
 
   if (!assetCode) {
     return res.status(400).json({ message: 'กรุณาระบุรหัสอุปกรณ์' });
   }
 
+  // Determine target asset status: MAINTENANCE if condition is damaged, otherwise READY
+  const isMaintenance = condition === 'MAINTENANCE' || newStatus === 'MAINTENANCE';
+  const targetAssetStatus = isMaintenance ? AssetStatus.MAINTENANCE : AssetStatus.READY;
+  const cleanReturnLocation = returnLocation ? returnLocation.trim() : null;
+
   try {
-    // Find asset
-    const asset = await prisma.asset.findUnique({
-      where: { assetCode }
-    });
-
-    if (!asset) {
-      return res.status(404).json({ message: 'ไม่พบรหัสอุปกรณ์นี้ในระบบ' });
-    }
-
-    // Find the active/overdue transaction
-    const activeTransaction = await prisma.transaction.findFirst({
-      where: {
-        assetId: asset.id,
-        status: { in: [TransactionStatus.ACTIVE, TransactionStatus.OVERDUE] }
-      }
-    });
-
-    if (!activeTransaction) {
-      if (asset.status === AssetStatus.BORROWED) {
-        const updatedAsset = await prisma.asset.update({
-          where: { id: asset.id },
-          data: { status: AssetStatus.READY }
-        });
-        return res.json({ message: 'ปลดล็อกสถานะอุปกรณ์เป็นพร้อมใช้งานเรียบร้อย แม้ไม่พบประวัติธุรกรรมค้างส่ง', asset: updatedAsset });
-      }
-      return res.status(400).json({ message: 'อุปกรณ์นี้ไม่ได้อยู่ในสถานะถูกยืม หรือไม่มีการบันทึกการยืม' });
-    }
-
-    // Update transaction and asset status — auto set READY
     const result = await prisma.$transaction(async (tx) => {
+      // Find asset inside transaction
+      const asset = await tx.asset.findUnique({
+        where: { assetCode }
+      });
+
+      if (!asset) {
+        const err = new Error('ไม่พบรหัสอุปกรณ์นี้ในระบบ');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      // Find the active/overdue transaction
+      const activeTransaction = await tx.transaction.findFirst({
+        where: {
+          assetId: asset.id,
+          status: { in: [TransactionStatus.ACTIVE, TransactionStatus.OVERDUE] }
+        }
+      });
+
+      if (!activeTransaction) {
+        if (asset.status === AssetStatus.BORROWED) {
+          const assetUpdateData = { status: targetAssetStatus };
+          if (cleanReturnLocation) {
+            assetUpdateData.location = cleanReturnLocation;
+          }
+
+          const updatedAsset = await tx.asset.update({
+            where: { id: asset.id },
+            data: assetUpdateData
+          });
+
+          return {
+            message: isMaintenance
+              ? 'ปลดล็อกสถานะอุปกรณ์และส่งซ่อมบำรุงเรียบร้อย'
+              : 'ปลดล็อกสถานะอุปกรณ์เป็นพร้อมใช้งานเรียบร้อย แม้ไม่พบประวัติธุรกรรมค้างส่ง',
+            asset: updatedAsset
+          };
+        }
+        const err = new Error('อุปกรณ์นี้ไม่ได้อยู่ในสถานะถูกยืม หรือไม่มีการบันทึกการยืม');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const conditionTag = isMaintenance ? '[ชำรุด/ส่งซ่อมบำรุง]' : '[สภาพสมบูรณ์ปกติ]';
+      const formattedNote = notes
+        ? `${activeTransaction.notes ? activeTransaction.notes + ' | ' : ''}คืน (${conditionTag}): ${notes}`
+        : `${activeTransaction.notes ? activeTransaction.notes + ' | ' : ''}คืน (${conditionTag})`;
+
       const transaction = await tx.transaction.update({
         where: { id: activeTransaction.id },
         data: {
           returnDate: new Date(),
-          returnLocation: returnLocation || null,
+          returnLocation: cleanReturnLocation,
           status: TransactionStatus.RETURNED,
-          notes: notes ? `${activeTransaction.notes || ''} | คืน: ${notes}` : activeTransaction.notes
+          notes: formattedNote
         }
       });
 
-      // Auto-update asset status to READY
-      await tx.asset.update({
+      // Update asset status and location to new return location if provided
+      const assetUpdateData = { status: targetAssetStatus };
+      if (cleanReturnLocation) {
+        assetUpdateData.location = cleanReturnLocation;
+      }
+
+      const updatedAsset = await tx.asset.update({
         where: { id: asset.id },
-        data: { status: AssetStatus.READY }
+        data: assetUpdateData
       });
 
-      return transaction;
+      return {
+        ...transaction,
+        asset: updatedAsset,
+        message: isMaintenance ? 'บันทึกรับคืนและส่งซ่อมบำรุงเรียบร้อย' : 'บันทึกส่งคืนเข้าคลังพร้อมใช้งานเรียบร้อย'
+      };
     });
 
     return res.json(result);
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการทำรายการคืน', error: error.message });
   }
 });

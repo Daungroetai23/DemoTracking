@@ -5,7 +5,7 @@ import api from '../api/client';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 
 export default function SettingsPage() {
-  const { user, login } = useAuth();
+  const { user, updateUser } = useAuth();
 
   // Category management states
   const [categories, setCategories] = useState([]);
@@ -89,16 +89,15 @@ export default function SettingsPage() {
       // Put directly to update user
       const updated = await api.put(`/users/${user.id}`, profileForm);
       
-      // Update local storage user details (using login wrapper helper if applicable, or local context updates)
-      const token = localStorage.getItem('token');
-      localStorage.setItem('user', JSON.stringify({
-        ...user,
-        name: updated.name,
-        email: updated.email
-      }));
+      // Update global AuthContext state and localStorage
+      if (updateUser) {
+        updateUser({
+          name: updated.name,
+          email: updated.email
+        });
+      }
       
-      // Force trigger local context update by page refresh or state change
-      setProfileMessage({ type: 'success', text: 'อัปเดตข้อมูลผู้ใช้งานส่วนตัวเรียบร้อยแล้ว! (รีโหลดเบราว์เซอร์เพื่อแสดงผล)' });
+      setProfileMessage({ type: 'success', text: 'อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้ว!' });
     } catch (err) {
       setProfileMessage({ type: 'danger', text: err.message || 'ไม่สามารถบันทึกการแก้ไขข้อมูลได้' });
     } finally {
@@ -109,16 +108,26 @@ export default function SettingsPage() {
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     setPasswordMessage(null);
+
+    if (!passwordForm.oldPassword) {
+      setPasswordMessage({ type: 'danger', text: 'กรุณากรอกรหัสผ่านเดิมเพื่อยืนยันตัวตน' });
+      return;
+    }
     
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       setPasswordMessage({ type: 'danger', text: 'รหัสผ่านใหม่และยืนยันรหัสผ่านใหม่ไม่ตรงกัน' });
       return;
     }
 
+    if (passwordForm.newPassword.length < 6) {
+      setPasswordMessage({ type: 'danger', text: 'รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร' });
+      return;
+    }
+
     setPasswordLoading(true);
     try {
-      // Endpoint to update password. We reuse the PUT user endpoint
       await api.put(`/users/${user.id}`, {
+        oldPassword: passwordForm.oldPassword,
         password: passwordForm.newPassword
       });
 
@@ -221,6 +230,18 @@ export default function SettingsPage() {
             )}
 
             <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">รหัสผ่านปัจจุบัน (เดิม)</label>
+              <input
+                type="password"
+                required
+                value={passwordForm.oldPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, oldPassword: e.target.value })}
+                placeholder="กรอกรหัสผ่านเดิมเพื่อยืนยันตัวตน"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-semibold text-slate-700"
+              />
+            </div>
+
+            <div>
               <label className="block text-xs font-bold text-slate-500 mb-1.5">รหัสผ่านใหม่</label>
               <input
                 type="password"
@@ -261,86 +282,90 @@ export default function SettingsPage() {
 
       </div>
 
-      {/* Category Management */}
-      <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
-        <h3 className="text-sm font-black text-slate-800 flex items-center gap-2 pb-3 border-b border-slate-50">
-          <Settings className="w-4.5 h-4.5 text-slate-400" />
-          การจัดการหมวดหมู่อุปกรณ์
-        </h3>
+      {/* Category Management - Available to ADMIN and IT_SUPPORT */}
+      {(user?.role === 'ADMIN' || user?.role === 'IT_SUPPORT') && (
+        <>
+          <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
+            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2 pb-3 border-b border-slate-50">
+              <Settings className="w-4.5 h-4.5 text-slate-400" />
+              การจัดการหมวดหมู่อุปกรณ์
+            </h3>
 
-        {/* Status/Error messages */}
-        {categoryMessage && (
-          <div className={`mt-3 p-3 rounded-xl border text-xs font-bold
-            ${categoryMessage.type === 'success'
-              ? 'bg-green-50 border-green-100 text-green-700'
-              : 'bg-rose-50 border-rose-100 text-rose-700'
-            }`}
-          >
-            {categoryMessage.text}
-          </div>
-        )}
+            {/* Status/Error messages */}
+            {categoryMessage && (
+              <div className={`mt-3 p-3 rounded-xl border text-xs font-bold
+                ${categoryMessage.type === 'success'
+                  ? 'bg-green-50 border-green-100 text-green-700'
+                  : 'bg-rose-50 border-rose-100 text-rose-700'
+                }`}
+              >
+                {categoryMessage.text}
+              </div>
+            )}
 
-        {/* Add Category Form */}
-        <form onSubmit={handleAddCategory} className="mt-4 flex flex-col sm:flex-row gap-3">
-          <div className="flex-1">
-            <input
-              type="text"
-              required
-              placeholder="กรอกชื่อหมวดหมู่ใหม่ เช่น อุปกรณ์เสริม"
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-semibold text-slate-700"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={addCategoryLoading}
-            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-blue-200 shrink-0"
-          >
-            {addCategoryLoading ? 'กำลังเพิ่ม...' : 'เพิ่มหมวดหมู่'}
-          </button>
-        </form>
+            {/* Add Category Form */}
+            <form onSubmit={handleAddCategory} className="mt-4 flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  required
+                  placeholder="กรอกชื่อหมวดหมู่ใหม่ เช่น อุปกรณ์เสริม"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-semibold text-slate-700"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={addCategoryLoading}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-blue-200 shrink-0"
+              >
+                {addCategoryLoading ? 'กำลังเพิ่ม...' : 'เพิ่มหมวดหมู่'}
+              </button>
+            </form>
 
-        {/* Categories List */}
-        <div className="mt-6">
-          <h4 className="text-xs font-bold text-slate-400 mb-3">หมวดหมู่ทั้งหมดในระบบ</h4>
-          {categoriesLoading ? (
-            <div className="text-center py-6 text-xs font-bold text-slate-400">กำลังโหลด...</div>
-          ) : categories.length === 0 ? (
-            <div className="text-center py-6 text-xs font-bold text-slate-400">ไม่มีข้อมูลหมวดหมู่</div>
-          ) : (
-            <div className="flex flex-wrap gap-2.5">
-              {categories.map((cat) => (
-                <div
-                  key={cat.id}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-50 border border-slate-100 text-slate-600 text-xs font-semibold"
-                >
-                  <span>{cat.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteCategoryTarget(cat)}
-                    className="p-0.5 rounded-full hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
-                    title="ลบหมวดหมู่"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+            {/* Categories List */}
+            <div className="mt-6">
+              <h4 className="text-xs font-bold text-slate-400 mb-3">หมวดหมู่ทั้งหมดในระบบ</h4>
+              {categoriesLoading ? (
+                <div className="text-center py-6 text-xs font-bold text-slate-400">กำลังโหลด...</div>
+              ) : categories.length === 0 ? (
+                <div className="text-center py-6 text-xs font-bold text-slate-400">ไม่มีข้อมูลหมวดหมู่</div>
+              ) : (
+                <div className="flex flex-wrap gap-2.5">
+                  {categories.map((cat) => (
+                    <div
+                      key={cat.id}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-50 border border-slate-100 text-slate-600 text-xs font-semibold"
+                    >
+                      <span>{cat.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteCategoryTarget(cat)}
+                        className="p-0.5 rounded-full hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
+                        title="ลบหมวดหมู่"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* Delete Category Confirm */}
-      <ConfirmDialog
-        open={!!deleteCategoryTarget}
-        onClose={() => setDeleteCategoryTarget(null)}
-        onConfirm={handleDeleteCategory}
-        title="ยืนยันการลบหมวดหมู่"
-        message={`คุณต้องการลบหมวดหมู่ "${deleteCategoryTarget?.name}" หรือไม่? การลบจะทำได้เมื่อไม่มีอุปกรณ์ใดๆ ใช้งานหมวดหมู่นี้อยู่เท่านั้น`}
-        confirmLabel="ยืนยันการลบ"
-        danger
-      />
+          {/* Delete Category Confirm */}
+          <ConfirmDialog
+            open={!!deleteCategoryTarget}
+            onClose={() => setDeleteCategoryTarget(null)}
+            onConfirm={handleDeleteCategory}
+            title="ยืนยันการลบหมวดหมู่"
+            message={`คุณต้องการลบหมวดหมู่ "${deleteCategoryTarget?.name}" หรือไม่? การลบจะทำได้เมื่อไม่มีอุปกรณ์ใดๆ ใช้งานหมวดหมู่นี้อยู่เท่านั้น`}
+            confirmLabel="ยืนยันการลบ"
+            danger
+          />
+        </>
+      )}
 
     </div>
   );

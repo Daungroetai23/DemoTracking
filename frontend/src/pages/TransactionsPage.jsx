@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowRightLeft, Check, AlertCircle, MapPin } from 'lucide-react';
+import { ArrowRightLeft, Check, AlertCircle, MapPin, Wrench, CheckCircle2, AlertTriangle } from 'lucide-react';
 import api from '../api/client';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { PLACEHOLDER_IMAGE, getLocalDateString } from '../utils/helpers';
@@ -31,6 +31,7 @@ export default function TransactionsPage() {
 
   const [returnForm, setReturnForm] = useState({
     assetCode: '',
+    condition: 'READY', // 'READY' (ปกติ) or 'MAINTENANCE' (ชำรุด/ส่งซ่อม)
     returnLocation: '',
     notes: '',
   });
@@ -55,7 +56,11 @@ export default function TransactionsPage() {
             }));
           } else if (matchedAsset.status === 'BORROWED') {
             setActiveTab('return');
-            setReturnForm(prev => ({ ...prev, assetCode: code }));
+            setReturnForm(prev => ({
+              ...prev,
+              assetCode: code,
+              returnLocation: matchedAsset.location || ''
+            }));
           }
         }
       }
@@ -94,6 +99,12 @@ export default function TransactionsPage() {
   const handleBorrowSubmit = async (e) => {
     e.preventDefault();
     setMessage(null);
+
+    if (borrowForm.dueDate && borrowForm.borrowDate && borrowForm.dueDate < borrowForm.borrowDate) {
+      setMessage({ type: 'danger', text: 'วันที่ต้องส่งคืนต้องไม่น้อยกว่าวันที่ยืม' });
+      return;
+    }
+
     try {
       setSubmitLoading(true);
       await api.post('/transactions/borrow', borrowForm);
@@ -119,15 +130,30 @@ export default function TransactionsPage() {
     }
   };
 
+  // Auto-fill returnLocation when returning asset is selected
+  const handleReturnAssetChange = (assetCode) => {
+    const asset = assets.find(a => a.assetCode === assetCode);
+    setReturnForm(prev => ({
+      ...prev,
+      assetCode,
+      returnLocation: asset ? (asset.location || '') : prev.returnLocation
+    }));
+  };
+
   const handleReturnSubmit = async (e) => {
     e.preventDefault();
     setMessage(null);
     try {
       setSubmitLoading(true);
-      await api.post('/transactions/return', returnForm);
-      setMessage({ type: 'success', text: 'บันทึกรายการส่งคืนอุปกรณ์สำเร็จ!' });
+      const res = await api.post('/transactions/return', returnForm);
+      const isMaint = returnForm.condition === 'MAINTENANCE';
+      setMessage({
+        type: isMaint ? 'warning' : 'success',
+        text: res?.message || (isMaint ? 'บันทึกรับคืนและส่งซ่อมบำรุงเรียบร้อย!' : 'บันทึกรายการส่งคืนอุปกรณ์สำเร็จ!')
+      });
       setReturnForm({
         assetCode: '',
+        condition: 'READY',
         returnLocation: '',
         notes: '',
       });
@@ -325,7 +351,16 @@ export default function TransactionsPage() {
                   required
                   min={getLocalDateString(new Date())}
                   value={borrowForm.borrowDate}
-                  onChange={(e) => setBorrowForm({ ...borrowForm, borrowDate: e.target.value })}
+                  onChange={(e) => {
+                    const newBorrowDate = e.target.value;
+                    setBorrowForm(prev => {
+                      const updated = { ...prev, borrowDate: newBorrowDate };
+                      if (prev.dueDate && prev.dueDate < newBorrowDate) {
+                        updated.dueDate = newBorrowDate;
+                      }
+                      return updated;
+                    });
+                  }}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-white text-slate-700"
                 />
               </div>
@@ -334,6 +369,7 @@ export default function TransactionsPage() {
                 <input
                   type="date"
                   required
+                  min={borrowForm.borrowDate || getLocalDateString(new Date())}
                   value={borrowForm.dueDate}
                   onChange={(e) => setBorrowForm({ ...borrowForm, dueDate: e.target.value })}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-white text-slate-700"
@@ -374,7 +410,12 @@ export default function TransactionsPage() {
         ) : (
           /* Return Form */
           <form onSubmit={handleReturnSubmit} className="space-y-5">
-            <h2 className="text-lg font-black text-slate-800 border-b border-slate-50 pb-2">ส่งคืนอุปกรณ์</h2>
+            <div className="border-b border-slate-50 pb-2 flex items-center justify-between">
+              <h2 className="text-lg font-black text-slate-800">ส่งคืนอุปกรณ์</h2>
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-100">
+                ขั้นตอนการตรวจเช็กและรับคืน
+              </span>
+            </div>
 
             {/* Asset Selection */}
             <div>
@@ -382,12 +423,12 @@ export default function TransactionsPage() {
               <select
                 required
                 value={returnForm.assetCode}
-                onChange={(e) => setReturnForm({ ...returnForm, assetCode: e.target.value })}
+                onChange={(e) => handleReturnAssetChange(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-white text-slate-700"
               >
                 <option value="">เลือกอุปกรณ์ที่ต้องการส่งคืน (ที่ถูกยืมอยู่ในขณะนี้)</option>
                 {borrowedAssets.map(a => (
-                  <option key={a.id} value={a.assetCode}>{a.assetCode} - {a.name}</option>
+                  <option key={a.id} value={a.assetCode}>{a.assetCode} - {a.name} (ที่อยู่เดิม: {a.location})</option>
                 ))}
               </select>
 
@@ -416,7 +457,7 @@ export default function TransactionsPage() {
                         </div>
                         <h4 className="text-sm font-black text-slate-800 truncate">{asset.name}</h4>
                         <p className="text-[11px] text-slate-400 font-semibold truncate mt-0.5">S/N: {asset.serialNumber || '-'}</p>
-                        <p className="text-[11px] text-slate-500 font-semibold truncate mt-0.5">ตำแหน่งจัดเก็บ: {asset.location}</p>
+                        <p className="text-[11px] text-slate-500 font-semibold truncate mt-0.5">ตำแหน่งจัดเก็บปัจจุบัน: {asset.location}</p>
                       </div>
                     </div>
                   );
@@ -424,29 +465,108 @@ export default function TransactionsPage() {
               )}
             </div>
 
-            {/* Return Location — สถานที่ส่งคืน */}
+            {/* Equipment Inspection Status (ตรวจเช็กสภาพตัวเครื่อง - ตาม System Flowchart) */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-2">
+                สภาพตัวเครื่องและอุปกรณ์ (Inspection Status)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setReturnForm({ ...returnForm, condition: 'READY' })}
+                  className={`p-4 rounded-2xl border text-left transition-all flex items-start gap-3 ${
+                    returnForm.condition === 'READY'
+                      ? 'bg-emerald-50/80 border-emerald-400 ring-2 ring-emerald-200 text-emerald-950 shadow-sm'
+                      : 'bg-slate-50/60 border-slate-200 text-slate-600 hover:bg-slate-100/80'
+                  }`}
+                >
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center mt-0.5 shrink-0 transition-colors ${
+                    returnForm.condition === 'READY' ? 'bg-emerald-600 text-white' : 'border-2 border-slate-300'
+                  }`}>
+                    {returnForm.condition === 'READY' && <Check className="w-3 h-3 stroke-[3]" />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <p className="text-xs font-black text-slate-800">สมบูรณ์ปกติ (พร้อมใช้งาน)</p>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-semibold mt-1">
+                      อุปกรณ์ครบถ้วน นำกลับเข้าคลังสถานะ <strong className="text-emerald-700 font-mono">READY</strong>
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setReturnForm({ ...returnForm, condition: 'MAINTENANCE' })}
+                  className={`p-4 rounded-2xl border text-left transition-all flex items-start gap-3 ${
+                    returnForm.condition === 'MAINTENANCE'
+                      ? 'bg-rose-50/80 border-rose-400 ring-2 ring-rose-200 text-rose-950 shadow-sm'
+                      : 'bg-slate-50/60 border-slate-200 text-slate-600 hover:bg-slate-100/80'
+                  }`}
+                >
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center mt-0.5 shrink-0 transition-colors ${
+                    returnForm.condition === 'MAINTENANCE' ? 'bg-rose-600 text-white' : 'border-2 border-slate-300'
+                  }`}>
+                    {returnForm.condition === 'MAINTENANCE' && <Check className="w-3 h-3 stroke-[3]" />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <Wrench className="w-3.5 h-3.5 text-rose-600" />
+                      <p className="text-xs font-black text-rose-700">ชำรุด / ต้องส่งซ่อมบำรุง</p>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-semibold mt-1">
+                      พบอุปกรณ์ชำรุด บันทึกส่งซ่อมสถานะ <strong className="text-rose-700 font-mono">MAINTENANCE</strong>
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Return Location — สถานที่ส่งกลับ/จัดเก็บใหม่ */}
             <div>
               <label className="block text-xs font-bold text-slate-500 mb-1.5">
-                <MapPin className="w-3 h-3 inline mr-1" />สถานที่ส่งกลับ
+                <MapPin className="w-3 h-3 inline mr-1 text-blue-600" />สถานที่จัดเก็บหลังส่งคืน (Asset Storage Location)
               </label>
               <input
                 type="text"
-                placeholder="ระบุสถานที่ที่ส่งอุปกรณ์คืน"
+                placeholder="ระบุสถานที่จัดเก็บ เช่น ตู้เก็บอุปกรณ์ IT ชั้น 2, คลังสินค้า A..."
                 value={returnForm.returnLocation}
                 onChange={(e) => setReturnForm({ ...returnForm, returnLocation: e.target.value })}
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-white text-slate-700"
               />
+              <p className="text-[11px] text-slate-400 font-semibold mt-1">
+                💡 ตำแหน่งจัดเก็บปัจจุบันของอุปกรณ์ในระบบจะถูกอัปเดตเป็นสถานที่นี้อัตโนมัติ
+              </p>
             </div>
 
             {/* Return Notes */}
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1.5">หมายเหตุการส่งคืน (เช่น สภาพอุปกรณ์ครบถ้วน)</label>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">
+                {returnForm.condition === 'MAINTENANCE' ? (
+                  <span className="text-rose-600 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    ระบุอาการชำรุด / อุปกรณ์ที่สูญหาย (จำเป็นสำหรับส่งซ่อม)
+                  </span>
+                ) : (
+                  'หมายเหตุการส่งคืน (เช่น สภาพอุปกรณ์ครบถ้วน, เอกสารส่งมอบ)'
+                )}
+              </label>
               <textarea
-                placeholder="ระบุหมายเหตุหรือสภาพอุปกรณ์ขณะส่งคืน..."
+                required={returnForm.condition === 'MAINTENANCE'}
+                placeholder={
+                  returnForm.condition === 'MAINTENANCE'
+                    ? 'โปรดระบุรายละเอียดความเสียหาย เช่น จอแตก, เปิดไม่ติด, สายชาร์จชำรุด, รีโมตหาย เพื่อส่งต่อให้ฝ่ายซ่อมบำรุง...'
+                    : 'ระบุหมายเหตุหรือสภาพอุปกรณ์ขณะส่งคืน...'
+                }
                 rows={3}
                 value={returnForm.notes}
                 onChange={(e) => setReturnForm({ ...returnForm, notes: e.target.value })}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold bg-white text-slate-700"
+                className={`w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 font-semibold bg-white ${
+                  returnForm.condition === 'MAINTENANCE'
+                    ? 'border-rose-200 focus:ring-rose-500 text-slate-800'
+                    : 'border-slate-200 focus:ring-blue-500 text-slate-700'
+                }`}
               />
             </div>
 
@@ -462,9 +582,25 @@ export default function TransactionsPage() {
               <button
                 type="submit"
                 disabled={submitLoading}
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-sm transition-all shadow-md shadow-blue-200"
+                className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md flex items-center gap-2 ${
+                  returnForm.condition === 'MAINTENANCE'
+                    ? 'bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white shadow-rose-200'
+                    : 'bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white shadow-blue-200'
+                }`}
               >
-                {submitLoading ? 'กำลังทำรายการ...' : 'ยืนยันการคืน'}
+                {submitLoading ? (
+                  'กำลังทำรายการ...'
+                ) : returnForm.condition === 'MAINTENANCE' ? (
+                  <>
+                    <Wrench className="w-4 h-4" />
+                    <span>บันทึกส่งซ่อมบำรุง</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>ยืนยันการคืนเข้าคลัง</span>
+                  </>
+                )}
               </button>
             </div>
           </form>

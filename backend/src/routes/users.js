@@ -69,14 +69,21 @@ router.post('/', authenticateJWT, authorizeRoles('ADMIN'), async (req, res) => {
   }
 });
 
-// PUT update user
-router.put('/:id', authenticateJWT, authorizeRoles('ADMIN'), async (req, res) => {
+// PUT update user (Admin can update anyone; users can update their own profile and password)
+router.put('/:id', authenticateJWT, async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) {
     return res.status(400).json({ message: 'ID ไม่ถูกต้อง' });
   }
 
-  const { email, name, password, role } = req.body;
+  const isSelf = req.user && req.user.id === id;
+  const isAdmin = req.user && req.user.role === 'ADMIN';
+
+  if (!isSelf && !isAdmin) {
+    return res.status(403).json({ message: 'ไม่มีสิทธิ์แก้ไขข้อมูลผู้ใช้งานนี้' });
+  }
+
+  const { email, name, password, role, oldPassword } = req.body;
 
   try {
     const existingUser = await prisma.user.findUnique({ where: { id } });
@@ -85,8 +92,8 @@ router.put('/:id', authenticateJWT, authorizeRoles('ADMIN'), async (req, res) =>
     }
 
     // Check email conflict
-    if (email && email !== existingUser.email) {
-      const emailConflict = await prisma.user.findUnique({ where: { email } });
+    if (email && email.trim() !== existingUser.email) {
+      const emailConflict = await prisma.user.findUnique({ where: { email: email.trim() } });
       if (emailConflict) {
         return res.status(400).json({ message: 'อีเมลนี้ถูกใช้งานโดยผู้ใช้คนอื่นแล้ว' });
       }
@@ -94,10 +101,22 @@ router.put('/:id', authenticateJWT, authorizeRoles('ADMIN'), async (req, res) =>
 
     const validRoles = ['ADMIN', 'IT_SUPPORT', 'SALES'];
     const updateData = {};
-    if (email) updateData.email = email;
-    if (name) updateData.name = name;
-    if (role && validRoles.includes(role)) updateData.role = role;
+    if (email) updateData.email = email.trim();
+    if (name) updateData.name = name.trim();
+
+    // Only ADMIN can change user roles
+    if (isAdmin && role && validRoles.includes(role)) {
+      updateData.role = role;
+    }
+
     if (password) {
+      // If updating own password and oldPassword was passed, verify oldPassword
+      if (isSelf && oldPassword) {
+        const isMatch = bcrypt.compareSync(oldPassword, existingUser.password);
+        if (!isMatch) {
+          return res.status(400).json({ message: 'รหัสผ่านเดิมไม่ถูกต้อง' });
+        }
+      }
       updateData.password = bcrypt.hashSync(password, 10);
     }
 

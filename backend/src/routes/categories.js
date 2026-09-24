@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticateJWT } from '../middleware/auth.js';
+import { authenticateJWT, authorizeRoles } from '../middleware/auth.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -17,8 +17,8 @@ router.get('/', authenticateJWT, async (req, res) => {
   }
 });
 
-// POST add a category
-router.post('/', authenticateJWT, async (req, res) => {
+// POST add a category (ADMIN & IT_SUPPORT only)
+router.post('/', authenticateJWT, authorizeRoles('ADMIN', 'IT_SUPPORT'), async (req, res) => {
   const { name } = req.body;
 
   if (!name || !name.trim()) {
@@ -46,8 +46,8 @@ router.post('/', authenticateJWT, async (req, res) => {
   }
 });
 
-// DELETE a category
-router.delete('/:id', authenticateJWT, async (req, res) => {
+// DELETE a category (ADMIN & IT_SUPPORT only)
+router.delete('/:id', authenticateJWT, authorizeRoles('ADMIN', 'IT_SUPPORT'), async (req, res) => {
   const id = parseInt(req.params.id);
 
   if (isNaN(id)) {

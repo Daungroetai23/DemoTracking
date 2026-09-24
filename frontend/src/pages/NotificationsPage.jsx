@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, RefreshCw, Info, Eye, ArrowRightLeft, CheckCircle2 } from 'lucide-react';
+import { Bell, RefreshCw, Info, Eye, ArrowRightLeft, CheckCircle2, AlertTriangle, Wrench } from 'lucide-react';
 import api from '../api/client';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 
@@ -43,8 +43,8 @@ export default function NotificationsPage() {
             <Bell className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-base font-black text-slate-800">สถานะและความพร้อมใช้งาน</h1>
-            <p className="text-[10px] text-slate-400 font-bold">แสดงอุปกรณ์ที่ว่างพร้อมใช้งานในระบบ และเครื่องที่อยู่ระหว่างส่งซ่อม</p>
+            <h1 className="text-base font-black text-slate-800">ศูนย์การแจ้งเตือนและการติดตาม</h1>
+            <p className="text-[10px] text-slate-400 font-bold">แจ้งเตือนกำหนดคืน, อุปกรณ์เกินกำหนด, เครื่องส่งซ่อม และสถานะความพร้อมใช้งาน</p>
           </div>
         </div>
 
@@ -72,15 +72,28 @@ export default function NotificationsPage() {
             let cardStyle = 'bg-blue-50/20 border-blue-100 text-blue-800';
             let icon = <Info className="w-5 h-5 text-blue-500 shrink-0" />;
             let label = 'แจ้งข้อมูล';
+            let badgeStyle = 'bg-blue-100/60 border-blue-200 text-blue-700';
             
-            if (notif.type === 'success') {
-              cardStyle = 'bg-emerald-50/30 border-emerald-100 text-emerald-800';
+            if (notif.type === 'danger') {
+              cardStyle = 'bg-rose-50/40 border-rose-200 text-rose-900';
+              icon = <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />;
+              label = 'เกินกำหนดส่งคืน';
+              badgeStyle = 'bg-rose-100 border-rose-200 text-rose-700';
+            } else if (notif.type === 'warning') {
+              cardStyle = 'bg-amber-50/40 border-amber-200 text-amber-900';
+              icon = <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />;
+              label = 'ใกล้ครบกำหนดคืน';
+              badgeStyle = 'bg-amber-100 border-amber-200 text-amber-700';
+            } else if (notif.type === 'info') {
+              cardStyle = 'bg-slate-50 border-slate-200 text-slate-800';
+              icon = <Wrench className="w-5 h-5 text-slate-500 shrink-0" />;
+              label = 'ส่งซ่อมบำรุง';
+              badgeStyle = 'bg-slate-200/70 border-slate-300 text-slate-700';
+            } else if (notif.type === 'success') {
+              cardStyle = 'bg-emerald-50/40 border-emerald-200 text-emerald-900';
               icon = <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />;
               label = 'พร้อมใช้งาน';
-            } else if (notif.type === 'info') {
-              cardStyle = 'bg-blue-50/30 border-blue-100 text-blue-800';
-              icon = <Info className="w-5 h-5 text-blue-500 shrink-0" />;
-              label = 'ส่งซ่อมบำรุง';
+              badgeStyle = 'bg-emerald-100 border-emerald-200 text-emerald-700';
             }
 
             return (
@@ -92,7 +105,7 @@ export default function NotificationsPage() {
                   {icon}
                   <div className="space-y-1">
                     <p className="text-xs font-black leading-relaxed">{notif.message}</p>
-                    <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/60 border border-slate-200/50 text-slate-500">
+                    <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${badgeStyle}`}>
                       {label}
                     </span>
                   </div>
@@ -100,7 +113,7 @@ export default function NotificationsPage() {
 
                 {/* Quick actions */}
                 {assetCode && (
-                  <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0 border-t border-slate-100/50 md:border-t-0 pt-3 md:pt-0">
+                  <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0 border-t border-slate-200/50 md:border-t-0 pt-3 md:pt-0">
                     <button
                       onClick={async () => {
                         try {
@@ -112,7 +125,7 @@ export default function NotificationsPage() {
                           alert('ไม่พบข้อมูลรหัสอุปกรณ์ในระบบ');
                         }
                       }}
-                      className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-[10px] font-bold text-slate-700 transition-colors"
+                      className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-[10px] font-bold text-slate-700 transition-colors shadow-sm"
                     >
                       <Eye className="w-3.5 h-3.5" />
                       ดูรายละเอียด
@@ -121,10 +134,20 @@ export default function NotificationsPage() {
                     {notif.type === 'success' && (
                       <button
                         onClick={() => navigate('/transactions', { state: { scanCode: assetCode } })}
-                        className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold transition-all shadow-md shadow-blue-100"
+                        className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold transition-all shadow-md shadow-blue-100"
                       >
                         <ArrowRightLeft className="w-3.5 h-3.5" />
                         ทำเรื่องยืม
+                      </button>
+                    )}
+
+                    {(notif.type === 'danger' || notif.type === 'warning') && (
+                      <button
+                        onClick={() => navigate('/transactions', { state: { scanCode: assetCode } })}
+                        className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold transition-all shadow-md shadow-amber-100"
+                      >
+                        <ArrowRightLeft className="w-3.5 h-3.5 rotate-180" />
+                        บันทึกรับคืน
                       </button>
                     )}
                   </div>

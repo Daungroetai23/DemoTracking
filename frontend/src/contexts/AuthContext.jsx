@@ -46,8 +46,16 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const updateUser = (updatedData) => {
+    setUser((prev) => {
+      const newUser = { ...prev, ...updatedData };
+      localStorage.setItem('demotrack_user', JSON.stringify(newUser));
+      return newUser;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

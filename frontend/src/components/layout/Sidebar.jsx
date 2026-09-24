@@ -51,10 +51,7 @@ export default function Sidebar({ open, onClose }) {
   // Filter menu items by user role
   const filteredNavItems = navItems.filter(item => {
     if (!user) return true;
-    if (user.role === 'SALES') {
-      return item.to !== '/users' && item.to !== '/settings';
-    }
-    if (user.role === 'IT_SUPPORT') {
+    if (user.role === 'SALES' || user.role === 'IT_SUPPORT') {
       return item.to !== '/users';
     }
     return true;
